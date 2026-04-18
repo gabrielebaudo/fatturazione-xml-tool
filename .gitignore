@@ -11,3 +11,4 @@ dist/
 venv/
 *.app/
 .DS_Store
+*.iconset/

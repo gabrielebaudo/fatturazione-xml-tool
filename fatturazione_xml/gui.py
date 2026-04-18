@@ -134,7 +134,9 @@ class _App(tk.Tk):
             bd=0,
             highlightthickness=0,
             bg="white",
+            fg="#000000",
             activebackground="#E5E7EB",
+            activeforeground="#000000",
         )
         option_menu["menu"].config(font=_font(11), bd=0)
         option_menu.grid(row=1, column=0, sticky="ew", ipady=3)

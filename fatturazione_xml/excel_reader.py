@@ -94,9 +94,14 @@ def read_cell_values(
     return results
 
 
-def get_numinvio(xlsm_path: str) -> int:
+def get_numinvio(xlsm_path: str, year: int | None = None) -> int:
     """
-    Read the current numinvio counter from '2026 XML'!K2.
+    Read the current numinvio counter from '{year} XML'!K2.
+
+    Args:
+        xlsm_path: path to the .xlsm workbook
+        year: invoice year used to find the counter sheet (e.g. 2026 → '2026 XML').
+              Defaults to 2026 if not provided.
 
     Returns the integer value (the current count, before incrementing).
 
@@ -109,12 +114,13 @@ def get_numinvio(xlsm_path: str) -> int:
     except FileNotFoundError:
         raise FileNotFoundError(f"Workbook not found: {xlsm_path!r}")
 
-    ws = wb["2026 XML"]
+    counter_sheet = f"{year} XML" if year else "2026 XML"
+    ws = wb[counter_sheet]
     value = ws["K2"].value
 
     if value is None or not isinstance(value, (int, float)):
         raise ValueError(
-            "numinvio not found in '2026 XML'!K2 — workbook may not be initialized"
+            f"numinvio not found in '{counter_sheet}'!K2 — workbook may not be initialized"
         )
 
     return int(value)

@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import openpyxl
 
-SHEET_NAME = "2026 XML"
+_DEFAULT_YEAR = 2026
 CELL_REF = "K2"
+
+
+def _counter_sheet(year: int | None) -> str:
+    return f"{year if year else _DEFAULT_YEAR} XML"
 
 
 class ConcurrentModificationError(Exception):
@@ -21,9 +25,9 @@ class ConcurrentModificationError(Exception):
     pass
 
 
-def increment_numinvio(xlsm_path: str, current_value: int) -> int:
+def increment_numinvio(xlsm_path: str, current_value: int, year: int | None = None) -> int:
     """
-    Increment the numinvio counter in '2026 XML'!K2 from current_value to current_value+1.
+    Increment the numinvio counter in '{year} XML'!K2 from current_value to current_value+1.
 
     Writes to the xlsm using openpyxl with keep_vba=True to preserve macros.
 
@@ -32,6 +36,8 @@ def increment_numinvio(xlsm_path: str, current_value: int) -> int:
         current_value: the value currently in K2 (as read by get_numinvio).
                        Used as a safety check: if K2 != current_value, raises
                        ConcurrentModificationError (concurrent edit detected).
+        year: invoice year used to locate the counter sheet (e.g. 2026 → '2026 XML').
+              Defaults to 2026 if not provided.
 
     Returns:
         The new value (current_value + 1)
@@ -41,6 +47,7 @@ def increment_numinvio(xlsm_path: str, current_value: int) -> int:
         FileNotFoundError: if xlsm_path doesn't exist
         PermissionError: if the file is locked (e.g., open in Excel)
     """
+    sheet_name = _counter_sheet(year)
     try:
         # Load with data_only=True first to read the cached (evaluated) value
         # for the concurrent-modification safety check.  K2 may contain a formula
@@ -49,7 +56,7 @@ def increment_numinvio(xlsm_path: str, current_value: int) -> int:
     except FileNotFoundError:
         raise FileNotFoundError(f"Workbook not found: {xlsm_path!r}")
 
-    actual = wb_check[SHEET_NAME][CELL_REF].value
+    actual = wb_check[sheet_name][CELL_REF].value
 
     # Safely compare as integers, handling int/float stored values.
     try:
@@ -64,7 +71,7 @@ def increment_numinvio(xlsm_path: str, current_value: int) -> int:
 
     # Now load without data_only so we can write back without stripping formula metadata.
     wb = openpyxl.load_workbook(xlsm_path, keep_vba=True)
-    ws = wb[SHEET_NAME]
+    ws = wb[sheet_name]
 
     new_value = int(current_value) + 1
     ws[CELL_REF].value = new_value

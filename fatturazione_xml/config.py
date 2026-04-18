@@ -70,21 +70,21 @@ def is_configured() -> bool:
     return Path(config.get("xlsm_path", "")).exists()
 
 
-def get_output_filename(config: dict, numinvio_next: int) -> str:
+def get_output_filename(config: dict, progressivo: str | int) -> str:
     """
     Compute the output filename (not full path) for the XML file.
-    E.g. "IT01652160894_G48.xml" (prefix + numinvio_next + ".xml")
+    E.g. "IT01652160894_G48.xml" (prefix + progressivo + ".xml")
     """
     prefix = config.get("filename_prefix", DEFAULT_FILENAME_PREFIX)
-    return f"{prefix}{numinvio_next}.xml"
+    return f"{prefix}{str(progressivo)}.xml"
 
 
-def get_output_path(config: dict, numinvio_next: int) -> Path:
+def get_output_path(config: dict, progressivo: str | int) -> Path:
     """
     Compute the full output path for the XML file.
     Creates the output directory if it doesn't exist.
-    Returns: Path(xml_output_dir) / get_output_filename(config, numinvio_next)
+    Returns: Path(xml_output_dir) / get_output_filename(config, progressivo)
     """
     output_dir = Path(config.get("xml_output_dir", DEFAULT_XML_OUTPUT_DIR))
     output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / get_output_filename(config, numinvio_next)
+    return output_dir / get_output_filename(config, progressivo)

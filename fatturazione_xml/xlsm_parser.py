@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import zipfile
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # OpenXML namespaces
 _NS_SPREADSHEET = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -41,6 +41,7 @@ class XmlMapInfo:
     name: str           # e.g. "FatturaOrdiva"
     root_element: str   # e.g. "FatturaElettronica"
     namespace: str      # e.g. "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"
+    element_order: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -91,11 +92,14 @@ def _build_sheet_map(zf: zipfile.ZipFile) -> dict[str, str]:
 def _build_xml_maps(zf: zipfile.ZipFile) -> dict[int, XmlMapInfo]:
     """Parse xl/xmlMaps.xml and return {map_id: XmlMapInfo}."""
     root = _parse_xml(zf, "xl/xmlMaps.xml")
+    schema_elements = {
+        schema_el.get("ID", ""): schema_el
+        for schema_el in root.findall(f"{{{_NS_SPREADSHEET}}}Schema")
+    }
 
     # Build schemaId → namespace from <Schema> / <xsd:schema targetNamespace="...">
     schema_ns: dict[str, str] = {}
-    for schema_el in root.findall(f"{{{_NS_SPREADSHEET}}}Schema"):
-        schema_id = schema_el.get("ID", "")
+    for schema_id, schema_el in schema_elements.items():
         for xsd_schema in schema_el.iter(f"{{{_NS_XSD}}}schema"):
             tns = xsd_schema.get("targetNamespace")
             if tns:
@@ -111,9 +115,104 @@ def _build_xml_maps(zf: zipfile.ZipFile) -> dict[int, XmlMapInfo]:
             name=map_el.get("Name", ""),
             root_element=map_el.get("RootElement", ""),
             namespace=schema_ns.get(schema_id, ""),
+            element_order=_build_element_order(schema_elements, schema_id),
         )
         maps[mid] = info
     return maps
+
+
+def _element_name(element: ET.Element) -> str | None:
+    """Return the local xsd:element name, resolving simple ref attributes."""
+    name = element.get("name") or element.get("ref")
+    if not name:
+        return None
+    return name.split(":", 1)[-1]
+
+
+def _merge_order(
+    element_order: dict[str, list[str]],
+    parent_name: str,
+    child_names: list[str],
+) -> None:
+    """Merge child order while preserving the first schema order seen."""
+    existing = element_order.setdefault(parent_name, [])
+    for child_name in child_names:
+        if child_name not in existing:
+            existing.append(child_name)
+
+
+def _parse_schema_element_order(schema_el: ET.Element) -> dict[str, list[str]]:
+    """
+    Extract {parent_element: [child_element, ...]} from xsd:sequence nodes.
+
+    Excel stores most FatturaPA structures as inline complexType/sequence
+    definitions, so walking every xsd:element is enough to recover ordering.
+    """
+    element_order: dict[str, list[str]] = {}
+    xsd_element = f"{{{_NS_XSD}}}element"
+    xsd_complex_type = f"{{{_NS_XSD}}}complexType"
+    xsd_sequence = f"{{{_NS_XSD}}}sequence"
+
+    for element in schema_el.iter(xsd_element):
+        parent_name = _element_name(element)
+        if not parent_name:
+            continue
+
+        complex_type = element.find(xsd_complex_type)
+        if complex_type is None:
+            continue
+
+        sequence = complex_type.find(xsd_sequence)
+        if sequence is None:
+            continue
+
+        child_names = [
+            child_name
+            for child in sequence.findall(xsd_element)
+            if (child_name := _element_name(child))
+        ]
+        if child_names:
+            _merge_order(element_order, parent_name, child_names)
+
+    return element_order
+
+
+def _schema_chain(
+    schema_elements: dict[str, ET.Element],
+    schema_id: str,
+) -> list[ET.Element]:
+    """Return the map schema plus any SchemaRef targets, avoiding cycles."""
+    result: list[ET.Element] = []
+    seen: set[str] = set()
+
+    def visit(current_id: str) -> None:
+        if not current_id or current_id in seen:
+            return
+        seen.add(current_id)
+
+        schema_el = schema_elements.get(current_id)
+        if schema_el is None:
+            return
+
+        result.append(schema_el)
+        visit(schema_el.get("SchemaRef", ""))
+
+    visit(schema_id)
+    return result
+
+
+def _build_element_order(
+    schema_elements: dict[str, ET.Element],
+    schema_id: str,
+) -> dict[str, list[str]]:
+    """Build element ordering from a map schema and its referenced schema."""
+    element_order: dict[str, list[str]] = {}
+
+    for schema_el in _schema_chain(schema_elements, schema_id):
+        for parent_name, child_names in _parse_schema_element_order(schema_el).items():
+            _merge_order(element_order, parent_name, child_names)
+
+    return element_order
 
 
 def _find_single_cells_file(zf: zipfile.ZipFile, sheet_filename: str) -> str | None:

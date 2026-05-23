@@ -140,6 +140,37 @@ def _set_value(
         node.text = text
 
 
+def _local_name(tag: str) -> str:
+    """Return the local name from either a Clark-notation or plain XML tag."""
+    if tag.startswith("{"):
+        return tag.rsplit("}", 1)[-1]
+    return tag
+
+
+def _apply_schema_order(
+    element: ET.Element,
+    element_order: dict[str, list[str]],
+) -> None:
+    """Recursively reorder children according to the workbook XSD order."""
+    for child in list(element):
+        _apply_schema_order(child, element_order)
+
+    order = element_order.get(_local_name(element.tag))
+    if not order:
+        return
+
+    rank = {child_name: idx for idx, child_name in enumerate(order)}
+    children = list(element)
+    if len(children) < 2:
+        return
+
+    ordered_children = sorted(
+        enumerate(children),
+        key=lambda item: (rank.get(_local_name(item[1].tag), len(rank)), item[0]),
+    )
+    element[:] = [child for _, child in ordered_children]
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -192,6 +223,8 @@ def build_xml(
     # Apply root-level attributes last so they appear on the root element
     for attr_name, attr_val in root_attrs.items():
         root.set(attr_name, attr_val)
+
+    _apply_schema_order(root, xml_map.element_order)
 
     # Pretty-print (Python 3.9+)
     ET.indent(root, space="  ")

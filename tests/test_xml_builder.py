@@ -19,12 +19,16 @@ FATTURA_NS = "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_map(namespace: str = FATTURA_NS) -> XmlMapInfo:
+def _make_map(
+    namespace: str = FATTURA_NS,
+    element_order: dict[str, list[str]] | None = None,
+) -> XmlMapInfo:
     return XmlMapInfo(
         map_id=1,
         name="TestMap",
         root_element="FatturaElettronica",
         namespace=namespace,
+        element_order=element_order or {},
     )
 
 
@@ -317,6 +321,47 @@ class TestAttributeBinding(unittest.TestCase):
         self.assertIn('versione="FPR12"', output)
 
 
+class TestSchemaOrdering(unittest.TestCase):
+    """Workbook schema order should control XML child order."""
+
+    def test_reorders_children_from_schema_order(self):
+        xml_map = _make_map(
+            element_order={
+                "Sede": [
+                    "Indirizzo",
+                    "NumeroCivico",
+                    "CAP",
+                    "Comune",
+                    "Provincia",
+                    "Nazione",
+                ]
+            }
+        )
+        bindings_with_values = [
+            (
+                _make_binding(
+                    "/ns1:FatturaElettronica/FatturaElettronicaHeader"
+                    "/CessionarioCommittente/Sede/Nazione"
+                ),
+                "IT",
+            ),
+            (
+                _make_binding(
+                    "/ns1:FatturaElettronica/FatturaElettronicaHeader"
+                    "/CessionarioCommittente/Sede/Provincia"
+                ),
+                "NA",
+            ),
+        ]
+
+        output = build_xml(bindings_with_values, xml_map)
+
+        self.assertLess(
+            output.index("<Provincia>NA</Provincia>"),
+            output.index("<Nazione>IT</Nazione>"),
+        )
+
+
 class TestIntegrationWithRealWorkbook(unittest.TestCase):
     """Full round-trip: real xlsm → build_xml → parse."""
 
@@ -346,6 +391,24 @@ class TestIntegrationWithRealWorkbook(unittest.TestCase):
 
         # Namespace must be present
         self.assertIn(FATTURA_NS, output)
+
+    def test_real_workbook_orders_cessionario_sede(self):
+        from fatturazione_xml.xlsm_parser import get_sheet_bindings
+        from fatturazione_xml.excel_reader import read_cell_values
+
+        sb = get_sheet_bindings(XLSM_PATH, "XML con IVA")
+        bindings_with_values = read_cell_values(XLSM_PATH, "XML con IVA", sb.bindings)
+
+        output = build_xml(bindings_with_values, sb.xml_map)
+        cessionario = output[
+            output.index("<CessionarioCommittente>"):
+            output.index("</CessionarioCommittente>")
+        ]
+
+        self.assertLess(
+            cessionario.index("<Provincia>NA</Provincia>"),
+            cessionario.index("<Nazione>IT</Nazione>"),
+        )
 
 
 if __name__ == "__main__":

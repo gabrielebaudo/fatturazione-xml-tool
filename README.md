@@ -21,7 +21,7 @@ Grab the latest `.app` from the [Releases](https://github.com/gabrielebaudo/fatt
 First launch: macOS will block it because the app isn't notarized. Right-click → Open → Open, or run once from Terminal:
 
 ```bash
-xattr -cr /Applications/FatturazioneXML.app
+sudo xattr -cr /Applications/FatturazioneXML.app
 ```
 
 Then double-click normally from that point on.
@@ -45,7 +45,7 @@ python setup.py py2app
 
 First launch: open Settings, point the app at your `.xlsm` file, set the output folder and your `filename_prefix` (e.g. `Fattura_`). Settings persist in `~/Library/Application Support/FatturazioneXML/config.json`.
 
-Output files are named `{prefix}{numinvio+1}.xml`. The counter is read from the cell in the active year sheet and incremented after each successful export.
+Output files are named `{prefix}{ProgressivoInvio}.xml`. `ProgressivoInvio` is read from the selected XML sheet's mapped cell after Excel has calculated and saved it. The app does not update the workbook counter; manage/increment it in the `.xlsm` workflow before exporting.
 
 > **Before exporting:** save the `.xlsm` in Excel first. openpyxl reads cached formula values — export without saving and you get stale data.
 

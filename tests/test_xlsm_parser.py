@@ -5,8 +5,11 @@ Runs against the real .xlsm file at:
     /Users/gabrielebaudo/fatturazione/Database fatturazione 2026.xlsm
 """
 
+import tempfile
 import unittest
+import zipfile
 from fatturazione_xml.xlsm_parser import (
+    _build_xml_maps,
     list_xml_sheets,
     get_sheet_bindings,
 )
@@ -164,6 +167,57 @@ class TestErrorHandling(unittest.TestCase):
         # "Fattura" is the first sheet and has no XML bindings
         with self.assertRaises((KeyError, ValueError)):
             get_sheet_bindings(XLSM_PATH, "Fattura")
+
+
+class TestXmlMapSchemaOrder(unittest.TestCase):
+
+    def test_schema_ref_order_is_extracted(self):
+        xml_maps = """<?xml version="1.0" encoding="UTF-8"?>
+<xmlMaps xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+         xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Schema ID="SchemaA" SchemaRef="SchemaB"
+          Namespace="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
+    <xs:schema targetNamespace="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
+      <xs:element name="FatturaElettronica">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element ref="FatturaElettronicaHeader"/>
+            <xs:element ref="FatturaElettronicaBody"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </Schema>
+  <Schema ID="SchemaB">
+    <xs:schema>
+      <xs:element name="Sede">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="Provincia"/>
+            <xs:element name="Nazione"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </Schema>
+  <Map ID="28" Name="FatturaOrdiva" RootElement="FatturaElettronica" SchemaID="SchemaA"/>
+</xmlMaps>
+"""
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsm", delete=False)
+        tmp.close()
+        self.addCleanup(lambda: __import__("os").unlink(tmp.name))
+
+        with zipfile.ZipFile(tmp.name, "w") as zf:
+            zf.writestr("xl/xmlMaps.xml", xml_maps)
+
+        with zipfile.ZipFile(tmp.name, "r") as zf:
+            maps = _build_xml_maps(zf)
+
+        self.assertEqual(
+            maps[28].element_order["FatturaElettronica"],
+            ["FatturaElettronicaHeader", "FatturaElettronicaBody"],
+        )
+        self.assertEqual(maps[28].element_order["Sede"], ["Provincia", "Nazione"])
 
 
 if __name__ == "__main__":
